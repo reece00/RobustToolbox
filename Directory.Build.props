@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <ItemDefinitionGroup>
     <PackageReference>
       <!--
@@ -23,6 +23,12 @@
     We need these unpruneable packages because of transitive dependency pinning.
     -->
     <NoWarn>$(NoWarn);NU1510</NoWarn>
+
+    <!--
+    Ensure FULL_RELEASE constant is active for all Release builds.
+    Prevents DirectoryNotFoundException when loader mounts resources.
+    -->
+    <DefineConstants Condition="'$(Configuration)' == 'Release' or '$(FullRelease)' == 'True'">FULL_RELEASE;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <!--    Robust.Benchmarks needs to see all of our dependencies,

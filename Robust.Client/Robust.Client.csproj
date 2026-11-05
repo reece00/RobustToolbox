@@ -84,4 +84,9 @@
   <Import Project="..\MSBuild\XamlIL.targets" />
 
   <Import Project="..\MSBuild\Robust.Trimming.targets" />
+  <ItemGroup>
+    <Compile Include="../../SS14.Config/IniSettings.cs" Link="Configuration/IniSettings.cs" />
+    <Compile Include="../../SS14.Config/ProviderCatalog.cs" Link="Configuration/ProviderCatalog.cs" />
+    <Compile Include="../../SS14.Config/TranslationHotkey.cs" Link="Configuration/TranslationHotkey.cs" />
+  </ItemGroup>
 </Project>

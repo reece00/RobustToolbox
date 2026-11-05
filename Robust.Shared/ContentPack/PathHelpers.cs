@@ -18,13 +18,14 @@ namespace Robust.Shared.ContentPack
             // Fallback in case the above doesn't work ig?
             var assembly = typeof(PathHelpers).Assembly;
             var location = assembly.Location;
-            if (location == string.Empty)
-            {
-                // See https://docs.microsoft.com/en-us/dotnet/api/system.reflection.assembly.location?view=net-5.0#remarks
-                // This doesn't apply to us really because we don't do that kind of publishing, but whatever.
-                throw new InvalidOperationException("Cannot find path of executable.");
-            }
-            return Path.GetDirectoryName(location)!;
+            if (!string.IsNullOrEmpty(location))
+                return Path.GetDirectoryName(location)!;
+
+            var processPath = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(processPath))
+                return Path.GetDirectoryName(processPath)!;
+
+            return AppContext.BaseDirectory;
         }
 
         /// <summary>

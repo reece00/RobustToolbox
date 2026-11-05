@@ -223,6 +223,11 @@ namespace Robust.Client.Input
         {
             _altGrPressed = args.AltGr;
 
+            // Client-local chat translation shortcut: consume before any submit/game binding.
+            // No additional EngineKeyFunctions, so network key-function IDs stay unchanged.
+            if (Robust.Client.UserInterface.Translation.ChatTranslationScope.TryHandleShortcut(_uiMgr.KeyboardFocused, args))
+                return;
+
             if (!Enabled || args.Key == Key.Unknown)
             {
                 return;
@@ -323,6 +328,12 @@ namespace Robust.Client.Input
         public void KeyUp(KeyEventArgs args)
         {
             _altGrPressed = args.AltGr;
+
+            if (Robust.Client.UserInterface.Translation.ChatTranslationScope.ConsumeKeyUp(args))
+            {
+                _keysPressed[(int) args.Key] = false;
+                return;
+            }
 
             if (args.Key == Key.Unknown)
             {

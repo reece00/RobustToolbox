@@ -4,6 +4,8 @@ using System.Numerics;
 using System.Text;
 using Robust.Client.Graphics;
 using Robust.Shared.Animations;
+using Robust.Shared.Timing;
+using Robust.Client.UserInterface.Translation;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
 using Robust.Shared.ViewVariables;
@@ -14,7 +16,7 @@ namespace Robust.Client.UserInterface.Controls
     ///     A label is a GUI control that displays simple text.
     /// </summary>
     [Virtual]
-    public class Label : Control
+    public partial class Label : Control
     {
         public const string StylePropertyFontColor = "font-color";
         public const string StylePropertyFont = "font";
@@ -44,6 +46,12 @@ namespace Robust.Client.UserInterface.Controls
             VerticalAlignment = VAlignment.Center;
         }
 
+        protected override void FrameUpdate(FrameEventArgs args)
+        {
+            base.FrameUpdate(args);
+            FrameUpdateTranslation();
+        }
+
         /// <summary>
         ///     The text to display.
         /// </summary>
@@ -62,6 +70,7 @@ namespace Robust.Client.UserInterface.Controls
             {
                 _text = value;
                 _textMemory = value.AsMemory();
+                RefreshDisplayText(sourceChanged: true);
                 _textDimensionCacheValid = false;
                 InvalidateMeasure();
             }
@@ -86,6 +95,7 @@ namespace Robust.Client.UserInterface.Controls
             {
                 _text = null;
                 _textMemory = value;
+                RefreshDisplayText(sourceChanged: true);
                 _textDimensionCacheValid = false;
                 InvalidateMeasure();
             }
@@ -313,7 +323,7 @@ namespace Robust.Client.UserInterface.Controls
             // Outline
             if (outline is { } outlineSettings)
             {
-                foreach (var rune in _textMemory.Span.EnumerateRunes())
+                foreach (var rune in _displayTextMemory.Span.EnumerateRunes())
                 {
                     if (rune == new Rune('\n'))
                     {
@@ -331,7 +341,7 @@ namespace Robust.Client.UserInterface.Controls
             }
 
             // Font itself
-            foreach (var rune in _textMemory.Span.EnumerateRunes())
+            foreach (var rune in _displayTextMemory.Span.EnumerateRunes())
             {
                 if (rune == new Rune('\n'))
                 {
@@ -404,7 +414,7 @@ namespace Robust.Client.UserInterface.Controls
 
             var font = ActualFont;
             var height = font.GetHeight(UIScale);
-            foreach (var rune in _textMemory.Span.EnumerateRunes())
+            foreach (var rune in _displayTextMemory.Span.EnumerateRunes())
             {
                 if (rune == new Rune('\n'))
                 {

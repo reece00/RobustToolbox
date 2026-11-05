@@ -8,6 +8,7 @@ using Robust.Client.UserInterface.RichText;
 using Robust.Shared.IoC;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
+using Robust.Shared.Timing;
 using Robust.Shared.ViewVariables;
 
 namespace Robust.Client.UserInterface.Controls
@@ -20,6 +21,11 @@ namespace Robust.Client.UserInterface.Controls
         private RichTextEntry? _entry;
         private float _lineHeightScale = 1;
         private bool _lineHeightOverride;
+        protected override void FrameUpdate(FrameEventArgs args)
+        {
+            base.FrameUpdate(args);
+            FrameUpdateTranslation(args);
+        }
         private readonly MarkupDrawingContext _drawingContext = new();
         private Font? _actualFont;
         private bool _fontCacheValid;
@@ -204,6 +210,8 @@ namespace Robust.Client.UserInterface.Controls
         protected internal override void Draw(DrawingHandleScreen handle)
         {
             base.Draw(handle);
+            if (_entry is { } entry)
+                ItemGlossary.CaptureVisibleRichText(this, entry.Message, entry.DisplayMessage);
             _entry?.Draw(_tagManager, handle, _getFont(), SizeBox, 0, _drawingContext, UIScale, LineHeightScale, ActualFontOutline);
         }
 

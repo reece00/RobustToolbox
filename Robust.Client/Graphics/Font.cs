@@ -194,6 +194,10 @@ namespace Robust.Client.Graphics
             if (!fallback || Rune.IsWhiteSpace(rune))
                 return false;
 
+            var chinese = TranslationFontFallback.GetHandle(Size);
+            if (chinese != null && chinese.TryGetGlyph(rune, scale, outlineThickness, out metrics, out texture, out outlinedGlyph))
+                return true;
+
             return Handle.TryGetGlyph(new Rune('�'), scale, outlineThickness, out metrics, out texture, out outlinedGlyph);
         }
 
@@ -209,7 +213,8 @@ namespace Robust.Client.Graphics
         {
             var metrics = Handle.GetCharMetrics(rune, scale);
             if (metrics == null && !Rune.IsWhiteSpace(rune) && fallback)
-                return Handle.GetCharMetrics(new Rune('�'), scale);
+                return TranslationFontFallback.GetHandle(Size)?.GetCharMetrics(rune, scale)
+                       ?? Handle.GetCharMetrics(new Rune('�'), scale);
             return metrics;
         }
     }

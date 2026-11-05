@@ -5,6 +5,7 @@ using System.Text;
 using Robust.Client.Graphics;
 using Robust.Client.UserInterface.Controls;
 using Robust.Client.UserInterface.RichText;
+using Robust.Client.UserInterface.Translation;
 using Robust.Shared.Collections;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
@@ -17,7 +18,7 @@ namespace Robust.Client.UserInterface
     ///     then <see cref="RemoveControls"/> should be called to ensure that any controls that were added by this
     ///     entry are also removed.
     /// </summary>
-    internal struct RichTextEntry
+    internal partial struct RichTextEntry
     {
         public static readonly Type[] DefaultTags =
         [
@@ -31,7 +32,10 @@ namespace Robust.Client.UserInterface
 
         private readonly Color _defaultColor;
         private readonly Type[]? _tagsAllowed;
-
+        private readonly Control? _owner;
+        private bool _pendingChatAdmission;
+        private FormattedMessage _displayMessage = default!;
+        private bool _translationLayoutDirty;
         public readonly FormattedMessage Message;
 
         /// <summary>
@@ -63,7 +67,11 @@ namespace Robust.Client.UserInterface
 
         public RichTextEntry(FormattedMessage message, Control parent, MarkupTagManager tagManager, Type[]? tagsAllowed, Color? defaultColor = null)
         {
+            _owner = parent;
+            _pendingChatAdmission = false;
+            _translationLayoutDirty = false;
             Message = message;
+            _displayMessage = message;
             Height = 0;
             Width = 0;
             LineBreaks = default;
@@ -123,7 +131,14 @@ namespace Robust.Client.UserInterface
         /// <param name="uiScale"></param>
         /// <param name="lineHeightScale"></param>
         public RichTextEntry Update(MarkupTagManager tagManager, Font defaultFont, float maxSizeX, float uiScale, float lineHeightScale = 1)
+            => Update(tagManager, defaultFont, maxSizeX, uiScale, lineHeightScale, false);
+
+        // Revision refreshes use this only for entries whose displayed literals changed.
+        // Ordinary Update still reflows unconditionally for size/font/style changes.
+        internal RichTextEntry UpdateLayout(MarkupTagManager tagManager, Font defaultFont, float maxSizeX, float uiScale, float lineHeightScale = 1)
         {
+            _translationLayoutDirty = false;
+
             // This method is gonna suck due to complexity.
             // Bear with me here.
             // I am so deeply sorry for the person adding stuff to this in the future.
@@ -141,7 +156,7 @@ namespace Robust.Client.UserInterface
             // Nodes can change the markup drawing context and return additional text.
             // It's also possible for nodes to return inline controls. They get treated as one large rune.
             var nodeIndex = -1;
-            foreach (var node in Message)
+            foreach (var node in _displayMessage ?? Message)
             {
                 nodeIndex++;
                 var text = ProcessNode(tagManager, node, context);
@@ -290,7 +305,7 @@ namespace Robust.Client.UserInterface
             var spaceRune = new Rune(' ');
 
             var nodeIndex = -1;
-            foreach (var node in Message)
+            foreach (var node in _displayMessage ?? Message)
             {
                 nodeIndex++;
                 var text = ProcessNode(tagManager, node, context);

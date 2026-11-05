@@ -118,6 +118,13 @@ namespace Robust.Client.UserInterface
             SetupControllers();
             _initializeCommon();
 
+            // IoC is thread-local: capture the logger here (main thread) before background translation workers start.
+            var translationRoot = Environment.GetEnvironmentVariable("ROBUST_TRANSLATION_ROOT");
+            if (!string.IsNullOrWhiteSpace(translationRoot)) Translation.TranslationStorage.EnsureWriter(translationRoot);
+            Translation.TranslationLog.Init();
+            Translation.TranslationDiagnostics.RegisterEngine("goob-293", "0a83625b9b7be45224692668ea4054d700a373e4");
+            _ = Translation.ChatTranslationService.Session;
+
             DebugConsole = new DropDownDebugConsole();
             RootControl.AddChild(DebugConsole);
             DebugConsole.SetPositionInParent(RootControl.ModalRoot.GetPositionInParent());
@@ -224,6 +231,8 @@ namespace Robust.Client.UserInterface
                     using (_prof.Group("Root"))
                     {
                         var totalUpdated = root.DoFrameUpdateRecursive(args);
+                        Translation.ChatTranslationScope.UpdateCustomTree(root, args.DeltaSeconds);
+                        Translation.TranslationDiagnostics.UpdateRoot(root);
 
                         _prof.WriteValue("Total", ProfData.Int32(totalUpdated));
                     }
@@ -417,7 +426,10 @@ namespace Robust.Client.UserInterface
                 // Handle modulation with care.
                 var oldMod = handle.Modulate;
                 handle.Modulate = modulate * control.ActualModulateSelf;
-                control.Draw(renderHandle);
+                // Only RMC's tactical-map direct text drawing opts into translation.
+                // Dispose before rendering children, and also when content drawing throws.
+                using (Translation.TacticalMapTextTranslation.Begin(control))
+                    control.Draw(renderHandle);
                 handle.Modulate = oldMod;
                 handle.UseShader(null);
             }

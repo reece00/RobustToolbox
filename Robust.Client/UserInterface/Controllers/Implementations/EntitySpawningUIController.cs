@@ -1,4 +1,6 @@
-﻿using System;
+using System;
+using Robust.Client.UserInterface.Translation;
+using Robust.Shared.Timing;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -28,6 +30,23 @@ public sealed partial class EntitySpawningUIController : UIController
     private EntitySpawnWindow? _window;
     private readonly List<EntityPrototype> _shownEntities = new();
     private bool _init;
+    private EntityNameCatalog? _nameCatalog;
+    private int _nameRevision = -1;
+    private Label? _nameCatalogStatus;
+    private float _nameRefreshDelay;
+
+    public override void FrameUpdate(FrameEventArgs args)
+    {
+        base.FrameUpdate(args);
+        if (_window is not { IsOpen: true } || _nameCatalog == null) return;
+        _nameCatalog.SetRequestsAllowed(TranslationDisplayPolicy.Get(_window) == TranslationDisplayMode.Normal);
+        _nameRefreshDelay -= args.DeltaSeconds;
+        if (_nameRefreshDelay > 0 || _nameRevision == _nameCatalog.Revision) return;
+        _nameRefreshDelay = 0.3f;
+        _nameRevision = _nameCatalog.Revision;
+        _nameCatalogStatus!.Text = $"目标 {_nameCatalog.TargetLanguage}：就绪 {_nameCatalog.ReadyCount}；原文 {_nameCatalog.UnchangedCount}；缺失 {_nameCatalog.MissingCount}；失败 {_nameCatalog.FailedCount}\n名称 {_nameCatalog.Count}；任意语言译名或别名 {_nameCatalog.NamedCount}；{_nameCatalog.Status}";
+        if (!string.IsNullOrEmpty(_window.SearchBar.Text)) BuildEntityList(_window.SearchBar.Text);
+    }
 
     public override void Initialize()
     {
@@ -78,6 +97,9 @@ public sealed partial class EntitySpawningUIController : UIController
         else
         {
             _window.Open();
+            _nameCatalog = EntityNameCatalogBridge.Open(_nameCatalog, _prototypes, _cfg, TranslationDisplayPolicy.Get(_window) == TranslationDisplayMode.Normal);
+            _nameRevision = -1;
+            BuildEntityList(_window.SearchBar.Text);
             UpdateEntityDirectionLabel();
             _window.SearchBar.GrabKeyboardFocus();
         }
@@ -89,6 +111,7 @@ public sealed partial class EntitySpawningUIController : UIController
             return;
 
         _window = UIManager.CreateWindow<EntitySpawnWindow>();
+        _nameCatalogStatus = new Label { ClipText = true, HorizontalExpand = true };
         LayoutContainer.SetAnchorPreset(_window, LayoutContainer.LayoutPreset.CenterLeft);
         _window.OnClose += WindowClosed;
         _window.ReplaceButton.Pressed = _placement.Replacement;
@@ -98,6 +121,7 @@ public sealed partial class EntitySpawningUIController : UIController
         _window.OverrideMenu.OnItemSelected += OnEntityOverrideSelected;
         ApplySavedOverrideMode();
         _window.SearchBar.OnTextChanged += OnEntitySearchChanged;
+        if (_window.SearchBar.Parent?.Parent is BoxContainer content) content.AddChild(_nameCatalogStatus);
         _window.ClearButton.OnPressed += OnEntityClearPressed;
         _window.PrototypeScrollContainer.OnScrolled += UpdateVisiblePrototypes;
         _window.OnResized += UpdateVisiblePrototypes;
@@ -126,6 +150,7 @@ public sealed partial class EntitySpawningUIController : UIController
 
     private void WindowClosed()
     {
+        _nameCatalog?.Close();
         if (_window == null || _window.Disposed)
             return;
 
@@ -251,9 +276,12 @@ public sealed partial class EntitySpawningUIController : UIController
         UpdateVisiblePrototypes();
     }
 
-    private static bool DoesEntityMatchSearch(EntityPrototype prototype, string searchStr)
+    private bool DoesEntityMatchSearch(EntityPrototype prototype, string searchStr)
     {
         if (string.IsNullOrEmpty(searchStr))
+            return true;
+
+        if (_nameCatalog?.Matches(prototype.ID, searchStr) == true)
             return true;
 
         if (prototype.ID.Contains(searchStr, StringComparison.InvariantCultureIgnoreCase))

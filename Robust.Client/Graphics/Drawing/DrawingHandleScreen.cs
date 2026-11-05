@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using System.Text;
+using Robust.Client.UserInterface.Translation;
 using Robust.Client.GameObjects;
 using Robust.Shared.Collections;
 using Robust.Shared.GameObjects;
@@ -156,6 +157,7 @@ namespace Robust.Client.Graphics
 
         public Vector2 DrawString(Font font, Vector2 pos, ReadOnlySpan<char> str, float scale, Color color, TextOutline? outline = null)
         {
+            str = TacticalMapTextTranslation.Translate(str);
             var advanceTotal = Vector2.Zero;
             var baseLine = new Vector2(pos.X, font.GetAscent(scale) + pos.Y);
             var lineHeight = font.GetLineHeight(scale);

@@ -3,6 +3,8 @@ using System.Diagnostics.Contracts;
 using System.Numerics;
 using Robust.Client.Graphics;
 using Robust.Client.UserInterface.RichText;
+using Robust.Client.UserInterface.Translation;
+using Robust.Shared.Timing;
 using Robust.Shared.Collections;
 using Robust.Shared.IoC;
 using Robust.Shared.Localization;
@@ -46,6 +48,11 @@ namespace Robust.Client.UserInterface.Controls
         public bool ScrollFollowing { get; set; } = true;
 
         private bool _invalidOnVisible;
+        protected override void FrameUpdate(FrameEventArgs args)
+        {
+            base.FrameUpdate(args);
+            FrameUpdateTranslation(args);
+        }
 
         public OutputPanel()
         {
@@ -145,7 +152,7 @@ namespace Robust.Client.UserInterface.Controls
         {
             var entry = new RichTextEntry(message, this, _tagManager, tagsAllowed, defaultColor);
 
-            entry.Update(_tagManager, _getFont(), _getContentBox().Width, UIScale);
+            entry.Update(_tagManager, _getFont(), _getContentBox().Width, UIScale, lineHeightScale: 1, allowChatEnqueue: true);
 
             _entries.Add(entry);
             var font = _getFont();
@@ -172,7 +179,7 @@ namespace Robust.Client.UserInterface.Controls
             _scrollBar.MaxValue = Math.Max(_scrollBar.Page, _totalContentHeight);
 
             var entry = new RichTextEntry(message, this, _tagManager, tagsAllowed, defaultColor);
-            entry.Update(_tagManager, _getFont(), _getContentBox().Width, UIScale);
+            entry.Update(_tagManager, _getFont(), _getContentBox().Width, UIScale, lineHeightScale: 1, allowChatEnqueue: true);
             _entries[index].RemoveControls();
             _entries[index] = entry;
 
@@ -284,7 +291,7 @@ namespace Robust.Client.UserInterface.Controls
             var sizeX = _getContentBox().Width;
             foreach (ref var entry in _entries)
             {
-                entry.Update(_tagManager, font, sizeX, UIScale);
+                entry.Update(_tagManager, font, sizeX, UIScale, lineHeightScale: 1, allowChatEnqueue: false);
                 _totalContentHeight += entry.Height + font.GetLineSeparation(UIScale);
             }
 

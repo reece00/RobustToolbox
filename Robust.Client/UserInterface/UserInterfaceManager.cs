@@ -115,6 +115,12 @@ namespace Robust.Client.UserInterface
             SetupControllers();
             _initializeCommon();
 
+            var translationRoot = Environment.GetEnvironmentVariable("ROBUST_TRANSLATION_ROOT");
+            if (!string.IsNullOrWhiteSpace(translationRoot)) Translation.TranslationStorage.EnsureWriter(translationRoot);
+            Translation.TranslationLog.Init();
+            Translation.TranslationDiagnostics.RegisterEngine("rmc14-264", "2c900143dedab89e45a0eb27f61326a269f21935");
+            _ = Translation.ChatTranslationService.Session;
+
             DebugConsole = new DropDownDebugConsole();
             RootControl.AddChild(DebugConsole);
             DebugConsole.SetPositionInParent(ModalRoot.GetPositionInParent());
@@ -225,6 +231,8 @@ namespace Robust.Client.UserInterface
                     using (_prof.Group("Root"))
                     {
                         var totalUpdated = root.DoFrameUpdateRecursive(args);
+                        Translation.ChatTranslationScope.UpdateCustomTree(root, args.DeltaSeconds);
+                        Translation.TranslationDiagnostics.UpdateRoot(root);
 
                         _prof.WriteValue("Total", ProfData.Int32(totalUpdated));
                     }
@@ -417,7 +425,10 @@ namespace Robust.Client.UserInterface
                 // Handle modulation with care.
                 var oldMod = handle.Modulate;
                 handle.Modulate = modulate * control.ActualModulateSelf;
-                control.Draw(renderHandle);
+                // Only RMC's tactical-map direct text drawing opts into translation.
+                // Dispose before rendering children, and also when content drawing throws.
+                using (Translation.TacticalMapTextTranslation.Begin(control))
+                    control.Draw(renderHandle);
                 handle.Modulate = oldMod;
                 handle.UseShader(null);
             }

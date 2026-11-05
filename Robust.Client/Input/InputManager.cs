@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -222,6 +222,11 @@ namespace Robust.Client.Input
                 return;
             }
 
+            // Client-local chat translation shortcut: consume before any submit/game binding.
+            // No additional EngineKeyFunctions, so network key-function IDs stay unchanged.
+            if (Robust.Client.UserInterface.Translation.ChatTranslationScope.TryHandleShortcut(_uiMgr.KeyboardFocused, args))
+                return;
+
             _keysPressed[(int) args.Key] = true;
 
             PackedKeyCombo matchedCombo = default;
@@ -314,6 +319,12 @@ namespace Robust.Client.Input
             }
 
             FirstChanceOnKeyEvent?.Invoke(args, KeyEventType.Up);
+
+            if (Robust.Client.UserInterface.Translation.ChatTranslationScope.ConsumeKeyUp(args))
+            {
+                _keysPressed[(int) args.Key] = false;
+                return;
+            }
 
             var hasCanFocus = false;
             foreach (var binding in _bindings)

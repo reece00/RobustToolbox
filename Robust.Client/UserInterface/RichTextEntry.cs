@@ -5,6 +5,7 @@ using System.Text;
 using Robust.Client.Graphics;
 using Robust.Client.UserInterface.Controls;
 using Robust.Client.UserInterface.RichText;
+using Robust.Client.UserInterface.Translation;
 using Robust.Shared.Collections;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
@@ -21,8 +22,15 @@ namespace Robust.Client.UserInterface
     {
         private readonly Color _defaultColor;
         private readonly Type[]? _tagsAllowed;
+        private readonly Control _owner;
+        private bool _pendingChatAdmission;
 
         public readonly FormattedMessage Message;
+        // Keep Message unchanged for getters/copying; layout and drawing share this snapshot.
+        private FormattedMessage _displayMessage;
+        private bool _translationLayoutDirty;
+        internal readonly FormattedMessage DisplayMessage => _displayMessage;
+        internal readonly bool TranslationLayoutDirty => _translationLayoutDirty;
 
         /// <summary>
         ///     The vertical size of this entry, in pixels.
@@ -44,6 +52,12 @@ namespace Robust.Client.UserInterface
         public RichTextEntry(FormattedMessage message, Control parent, MarkupTagManager tagManager, Type[]? tagsAllowed = null, Color? defaultColor = null)
         {
             Message = message;
+            _owner = parent;
+            _pendingChatAdmission = false;
+            // Translation is selected during layout, when the owner has its chat ancestry.
+            // Literal/tag node indices are identical in the eventual display snapshot.
+            _displayMessage = message;
+            _translationLayoutDirty = false;
             Height = 0;
             Width = 0;
             LineBreaks = default;
@@ -52,7 +66,7 @@ namespace Robust.Client.UserInterface
             Dictionary<int, Control>? tagControls = null;
 
             var nodeIndex = -1;
-            foreach (var node in Message)
+            foreach (var node in _displayMessage)
             {
                 nodeIndex++;
 
@@ -98,7 +112,25 @@ namespace Robust.Client.UserInterface
         /// <param name="uiScale"></param>
         /// <param name="lineHeightScale"></param>
         public RichTextEntry Update(MarkupTagManager tagManager, Font defaultFont, float maxSizeX, float uiScale, float lineHeightScale = 1)
+            => Update(tagManager, defaultFont, maxSizeX, uiScale, lineHeightScale, false);
+
+        // Preserve the original Update signature. Only newly added/replaced chat entries
+        // use this overload; reflow passes do not gain new network admission opportunities.
+        internal RichTextEntry Update(MarkupTagManager tagManager, Font defaultFont, float maxSizeX, float uiScale, float lineHeightScale, bool allowChatEnqueue)
         {
+            // A message can be populated before its OutputPanel is attached to ChatBox.
+            // Carry its one admission opportunity until a layout recognizes that scope.
+            _pendingChatAdmission |= allowChatEnqueue;
+            RefreshTranslation();
+            return UpdateLayout(tagManager, defaultFont, maxSizeX, uiScale, lineHeightScale);
+        }
+
+        // Revision refreshes use this only for entries whose displayed literals changed.
+        // Ordinary Update still reflows unconditionally for size/font/style changes.
+        internal RichTextEntry UpdateLayout(MarkupTagManager tagManager, Font defaultFont, float maxSizeX, float uiScale, float lineHeightScale = 1)
+        {
+            _translationLayoutDirty = false;
+
             // This method is gonna suck due to complexity.
             // Bear with me here.
             // I am so deeply sorry for the person adding stuff to this in the future.
@@ -116,7 +148,7 @@ namespace Robust.Client.UserInterface
             // Nodes can change the markup drawing context and return additional text.
             // It's also possible for nodes to return inline controls. They get treated as one large rune.
             var nodeIndex = -1;
-            foreach (var node in Message)
+            foreach (var node in _displayMessage)
             {
                 nodeIndex++;
                 var text = ProcessNode(tagManager, node, context);
@@ -189,6 +221,46 @@ namespace Robust.Client.UserInterface
             }
         }
 
+        internal bool RefreshTranslation(bool? isChatOutput = null)
+        {
+            // Only the actual chat output is routed here. Buttons, tooltips, other UI,
+            // and debug-console OutputPanels continue using general UI translation.
+            var isChat = isChatOutput ?? (_owner is OutputPanel && ChatTranslationScope.IsChatControl(_owner));
+            var mode = TranslationDisplayPolicy.Get(_owner);
+            var allowChatEnqueue = isChat && _pendingChatAdmission && mode == TranslationDisplayMode.Normal;
+            if (isChat && mode == TranslationDisplayMode.Normal) _pendingChatAdmission = false;
+            var chat = isChat ? ChatTranslationService.Session : null;
+            FormattedMessage? display = _displayMessage.Count == Message.Count ? null : new FormattedMessage(Message.Count);
+            for (var i = 0; i < Message.Count; i++)
+            {
+                // Keep one node per source node, including all embedded-control indices.
+                // Translation output is literal text, never parsed as trusted markup.
+                // Do not run the general decorator afterwards: chat mode off means raw.
+                var node = Message[i];
+                var previous = i < _displayMessage.Count ? _displayMessage[i] : null;
+                var text = node.Value.StringValue ?? "";
+                if (node.Name == null)
+                    text = mode == TranslationDisplayMode.Original ? text : isChat
+                        ? chat?.GetIncoming(text, "incoming-chat", allowEnqueue: allowChatEnqueue) ?? text
+                        : TextCaptureDiagnostics.Session.Decorate(text, mode == TranslationDisplayMode.Normal);
+                var same = node.Name == null
+                    ? previous is { Name: null } && previous.Value.StringValue == text
+                    : ReferenceEquals(previous, node);
+                if (!same && display == null)
+                {
+                    // Reuse the complete old snapshot when nothing changed, and unchanged
+                    // nodes when one literal did. Embedded-control node indices stay intact.
+                    display = new FormattedMessage(Message.Count);
+                    for (var before = 0; before < i; before++) display.PushTag(_displayMessage[before]);
+                }
+                display?.PushTag(same ? previous! : node.Name == null ? new MarkupNode(text) : node);
+            }
+            if (display == null) return false;
+            _displayMessage = display;
+            _translationLayoutDirty = true;
+            return true;
+        }
+
         internal readonly void HideControls()
         {
             if (Controls == null)
@@ -220,7 +292,7 @@ namespace Robust.Client.UserInterface
             var controlYAdvance = 0f;
 
             var nodeIndex = -1;
-            foreach (var node in Message)
+            foreach (var node in _displayMessage)
             {
                 nodeIndex++;
                 var text = ProcessNode(tagManager, node, context);

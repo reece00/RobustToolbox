@@ -205,6 +205,8 @@ namespace Robust.Client.UserInterface.Controls
 
         private (int start, int length)? _imeData;
 
+        internal bool TranslationImeActive => _imeData.HasValue;
+
 
         // TODO:
         // I decided to not implement the entire LineEdit API yet,
@@ -280,6 +282,7 @@ namespace Robust.Client.UserInterface.Controls
         protected override void FrameUpdate(FrameEventArgs args)
         {
             base.FrameUpdate(args);
+            Robust.Client.UserInterface.Translation.ChatQuickSend.Update(this);
 
             IgnoreNext = false;
 
@@ -888,6 +891,12 @@ namespace Robust.Client.UserInterface.Controls
                 CursorPosition = _text.Length;
                 SelectionStart = 0;
             }
+        }
+
+        protected override void ExitedTree()
+        {
+            Robust.Client.UserInterface.Translation.ChatQuickSend.Cancel(this, "已取消快速发送：聊天框已关闭。");
+            base.ExitedTree();
         }
 
         protected internal override void KeyboardFocusExited()

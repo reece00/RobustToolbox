@@ -34,6 +34,11 @@ public sealed partial class FormattedMessage : IEquatable<FormattedMessage>, IRe
 
     public MarkupNode this[int index] => _nodes[index];
 
+    public void ReplaceNode(int index, MarkupNode node)
+    {
+        if (index >= 0 && index < _nodes.Count) _nodes[index] = node;
+    }
+
     private readonly List<MarkupNode> _nodes;
 
     /// <summary>

@@ -3,11 +3,13 @@ using System.Diagnostics.Contracts;
 using System.Numerics;
 using Robust.Client.Graphics;
 using Robust.Client.UserInterface.RichText;
+using Robust.Client.UserInterface.Translation;
 using Robust.Shared.Collections;
 using Robust.Shared.IoC;
 using Robust.Shared.Localization;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
+using Robust.Shared.Timing;
 
 namespace Robust.Client.UserInterface.Controls
 {
@@ -46,6 +48,96 @@ namespace Robust.Client.UserInterface.Controls
         public bool ScrollFollowing { get; set; } = true;
 
         private bool _invalidOnVisible;
+        private int _translationRevision = -1;
+        private int _chatTranslationRevision = -1;
+        private bool _wasChatOutput;
+        private float _translationRefreshCountdown;
+
+        protected override void FrameUpdate(FrameEventArgs args)
+        {
+            base.FrameUpdate(args);
+            if (!VisibleInTree || _entries.Count == 0)
+                return;
+
+            var isChatOutput = ChatTranslationScope.IsChatControl(this);
+            var uiRevision = HashCode.Combine(TextTranslationService.Session?.Revision ?? -1, TranslationDisplayPolicy.Revision, (int)TranslationDisplayPolicy.Get(this));
+            var chatRevision = HashCode.Combine(ChatTranslationService.Session?.Revision ?? -1, TranslationDisplayPolicy.Revision, (int)TranslationDisplayPolicy.Get(this));
+            _translationRefreshCountdown -= args.DeltaSeconds;
+            // Separate counters prevent equal revision numbers in unrelated services
+            // from hiding a completed chat translation. Non-chat panels ignore chat work.
+            var changed = isChatOutput != _wasChatOutput || (isChatOutput
+                ? _chatTranslationRevision != chatRevision
+                : _translationRevision != uiRevision);
+            if (!changed || (_translationRefreshCountdown > 0 && !TranslationDisplayPolicy.ChangedRecently))
+                return;
+
+            _wasChatOutput = isChatOutput;
+            _translationRevision = uiRevision;
+            _chatTranslationRevision = chatRevision;
+            _translationRefreshCountdown = 0.2f;
+            RefreshTranslatedEntries(isChatOutput);
+        }
+
+        private void RefreshTranslatedEntries(bool isChatOutput)
+        {
+            var changed = false;
+            foreach (ref var entry in _entries)
+                changed |= entry.RefreshTranslation(isChatOutput);
+            if (!changed) return;
+
+            var followBottom = _isAtBottom && ScrollFollowing;
+            var font = _getFont();
+            var separation = font.GetLineSeparation(UIScale);
+            var valueAnchor = GetScrollAnchor(_scrollBar.Value, separation);
+            var targetAnchor = GetScrollAnchor(_scrollBar.ValueTarget, separation);
+
+            // Update existing entries in place: their markup controls and original messages
+            // must survive. Rebuilding messages would also reset the chat scroll position.
+            // Translation completion does not change every historical line. Preserve the
+            // old layout of unchanged entries; resize/font paths still invalidate all.
+            var sizeX = _getContentBox().Width;
+            _totalContentHeight = 0;
+            foreach (ref var entry in _entries)
+            {
+                if (entry.TranslationLayoutDirty)
+                    entry.UpdateLayout(_tagManager, font, sizeX, UIScale);
+                _totalContentHeight += entry.Height + separation;
+            }
+            _scrollBar.MaxValue = Math.Max(_scrollBar.Page, _totalContentHeight);
+            if (followBottom)
+            {
+                _scrollBar.MoveToEnd();
+                _isAtBottom = true;
+            }
+            else
+            {
+                _scrollBar.Value = RestoreScrollAnchor(valueAnchor, separation);
+                _scrollBar.ValueTarget = RestoreScrollAnchor(targetAnchor, separation);
+                _isAtBottom = _scrollBar.IsAtEnd;
+            }
+            _updateScrollButtonVisibility();
+        }
+
+        private (int Entry, float Offset) GetScrollAnchor(float value, int separation)
+        {
+            var top = 0f;
+            for (var i = 0; i < _entries.Count; i++)
+            {
+                var span = _entries[i].Height + separation;
+                if (value < top + span || i == _entries.Count - 1)
+                    return (i, Math.Max(0, value - top));
+                top += span;
+            }
+            return (0, 0);
+        }
+
+        private float RestoreScrollAnchor((int Entry, float Offset) anchor, int separation)
+        {
+            var top = 0f;
+            for (var i = 0; i < anchor.Entry; i++)
+                top += _entries[i].Height + separation;
+            return top + Math.Min(anchor.Offset, Math.Max(0, _entries[anchor.Entry].Height + separation - 1));
+        }
 
         public OutputPanel()
         {
@@ -129,6 +221,15 @@ namespace Robust.Client.UserInterface.Controls
             _scrollBar.MaxValue = Math.Max(_scrollBar.Page, _totalContentHeight);
         }
 
+        // UI-thread-only, read-only context snapshot. Use original literal text, never
+        // translated display nodes, markup attributes, or embedded child controls.
+        internal string? GetRecentContextMessage(int offsetFromNewest)
+        {
+            if (offsetFromNewest < 0 || offsetFromNewest >= 200 || offsetFromNewest >= _entries.Count)
+                return null;
+            return _entries[_entries.Count - 1 - offsetFromNewest].Message.ToString();
+        }
+
         public void AddText(string text)
         {
             var msg = new FormattedMessage();
@@ -140,7 +241,7 @@ namespace Robust.Client.UserInterface.Controls
         {
             var entry = new RichTextEntry(message, this, _tagManager, null);
 
-            entry.Update(_tagManager, _getFont(), _getContentBox().Width, UIScale);
+            entry.Update(_tagManager, _getFont(), _getContentBox().Width, UIScale, lineHeightScale: 1, allowChatEnqueue: true);
 
             _entries.Add(entry);
             var font = _getFont();
@@ -162,7 +263,7 @@ namespace Robust.Client.UserInterface.Controls
             _scrollBar.MaxValue = Math.Max(_scrollBar.Page, _totalContentHeight);
 
             var entry = new RichTextEntry(message, this, _tagManager, tagsAllowed, defaultColor);
-            entry.Update(_tagManager, _getFont(), _getContentBox().Width, UIScale);
+            entry.Update(_tagManager, _getFont(), _getContentBox().Width, UIScale, lineHeightScale: 1, allowChatEnqueue: true);
             _entries[index] = entry;
 
             AddNewItemHeight(font, in entry);
@@ -271,9 +372,11 @@ namespace Robust.Client.UserInterface.Controls
             _totalContentHeight = 0;
             var font = _getFont();
             var sizeX = _getContentBox().Width;
+            // History is cache-only: a completed translation may change geometry,
+            // but resizing/revisions must never re-enqueue evicted old chat requests.
             foreach (ref var entry in _entries)
             {
-                entry.Update(_tagManager, font, sizeX, UIScale);
+                entry.Update(_tagManager, font, sizeX, UIScale, lineHeightScale: 1, allowChatEnqueue: false);
                 _totalContentHeight += entry.Height + font.GetLineSeparation(UIScale);
             }
 

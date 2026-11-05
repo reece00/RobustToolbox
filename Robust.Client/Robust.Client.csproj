@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\MSBuild\Robust.Engine.props" />
   <PropertyGroup>
     <IsPackable>false</IsPackable>
@@ -70,4 +70,13 @@
   <Import Project="..\MSBuild\XamlIL.targets" />
 
   <Import Project="..\MSBuild\Robust.Trimming.targets" />
+  <ItemGroup>
+    <!-- These implementations remain inline in the 264 adapter. -->
+    <Compile Remove="UserInterface/Controls/Label.Translation.cs;UserInterface/Controls/OutputPanel.Translation.cs;UserInterface/Controls/RichTextLabel.Translation.cs;UserInterface/RichTextEntry.Translation.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../SS14.Config/IniSettings.cs" Link="Configuration/IniSettings.cs" />
+    <Compile Include="../../SS14.Config/ProviderCatalog.cs" Link="Configuration/ProviderCatalog.cs" />
+    <Compile Include="../../SS14.Config/TranslationHotkey.cs" Link="Configuration/TranslationHotkey.cs" />
+  </ItemGroup>
 </Project>

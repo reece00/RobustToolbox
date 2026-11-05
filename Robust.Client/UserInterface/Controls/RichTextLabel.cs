@@ -1,4 +1,5 @@
 using System;
+using Robust.Client.UserInterface.Translation;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -8,6 +9,7 @@ using Robust.Client.UserInterface.RichText;
 using Robust.Shared.IoC;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
+using Robust.Shared.Timing;
 using Robust.Shared.ViewVariables;
 
 namespace Robust.Client.UserInterface.Controls
@@ -20,6 +22,30 @@ namespace Robust.Client.UserInterface.Controls
         private RichTextEntry? _entry;
         private float _lineHeightScale = 1;
         private bool _lineHeightOverride;
+        private int _translationRevision = -1;
+        private float _translationRefreshCountdown;
+
+        protected override void FrameUpdate(FrameEventArgs args)
+        {
+            base.FrameUpdate(args);
+            var service = TextTranslationService.Session;
+            if (service == null || !VisibleInTree || _entry == null)
+                return;
+
+            var revision = HashCode.Combine(service.Revision, TranslationDisplayPolicy.Revision, (int)TranslationDisplayPolicy.Get(this));
+            _translationRefreshCountdown -= args.DeltaSeconds;
+            if (_translationRevision == revision || (_translationRefreshCountdown > 0 && !TranslationDisplayPolicy.ChangedRecently))
+                return;
+
+            // Cache writes happen in the background. Only invalidate layout on the UI thread,
+            // coalescing completed batches rather than remeasuring for every translated string.
+            _translationRevision = revision;
+            _translationRefreshCountdown = 0.2f;
+            var entry = _entry.Value;
+            if (!entry.RefreshTranslation()) return;
+            _entry = entry;
+            InvalidateMeasure();
+        }
 
         [ViewVariables(VVAccess.ReadWrite)]
         public float LineHeightScale
@@ -105,6 +131,8 @@ namespace Robust.Client.UserInterface.Controls
         protected internal override void Draw(DrawingHandleScreen handle)
         {
             base.Draw(handle);
+            if (_entry is { } entry)
+                ItemGlossary.CaptureVisibleRichText(this, entry.Message, entry.DisplayMessage);
             _entry?.Draw(_tagManager, handle, _getFont(), SizeBox, 0, new MarkupDrawingContext(), UIScale, LineHeightScale);
         }
 

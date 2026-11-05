@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
@@ -7,6 +7,8 @@ using Robust.Shared.Animations;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
 using Robust.Shared.ViewVariables;
+using Robust.Shared.Timing;
+using Robust.Client.UserInterface.Translation;
 
 namespace Robust.Client.UserInterface.Controls
 {
@@ -25,12 +27,50 @@ namespace Robust.Client.UserInterface.Controls
         private bool _textDimensionCacheValid;
         private string? _text;
         private ReadOnlyMemory<char> _textMemory;
+        // Diagnostic decoration is display-only; public getters keep the original memory.
+        private ReadOnlyMemory<char> _displayTextMemory;
+        private int _translationRevision = -1;
+        private bool _channelDisplayScope;
+        private bool _displayRefreshPending;
+        private string? _fixedChannelDisplay;
         private bool _clipText;
         private AlignMode _align;
 
         public Label()
         {
             VerticalAlignment = VAlignment.Center;
+        }
+
+        protected override void FrameUpdate(FrameEventArgs args)
+        {
+            base.FrameUpdate(args);
+            RefreshDisplayText();
+        }
+
+        private void RefreshDisplayText(bool sourceChanged = false)
+        {
+            if (sourceChanged)
+                _fixedChannelDisplay = _textMemory.Length <= 32 &&
+                    ChatChannelDisplayNames.TryTranslate(_text ?? _textMemory.ToString(), out var translated)
+                    ? translated : null;
+            var channelScope = _fixedChannelDisplay != null && ChatChannelDisplayNames.IsChannelControl(this);
+            var mode = TranslationDisplayPolicy.Get(this);
+            var revision = HashCode.Combine(TextTranslationService.Session?.Revision ?? -1, TranslationDisplayPolicy.Revision, (int)TranslationDisplayPolicy.Get(this));
+            if (!sourceChanged && !_displayRefreshPending &&
+                _channelDisplayScope == channelScope && _translationRevision == revision) return;
+            _channelDisplayScope = channelScope;
+            _translationRevision = revision;
+            var candidate = _fixedChannelDisplay != null;
+            // Content constructs Labels before parenting them. Do not enqueue possible
+            // channel names until the control ancestry can establish their meaning.
+            _displayRefreshPending = candidate && Parent == null && !channelScope;
+            var display = mode == TranslationDisplayMode.Original ? _textMemory : channelScope && candidate
+                ? _fixedChannelDisplay.AsMemory()
+                : _displayRefreshPending ? _textMemory : TextCaptureDiagnostics.Session.Decorate(_textMemory, mode == TranslationDisplayMode.Normal);
+            if (display.Span.SequenceEqual(_displayTextMemory.Span)) return;
+            _displayTextMemory = display;
+            _textDimensionCacheValid = false;
+            InvalidateMeasure();
         }
 
         /// <summary>
@@ -50,6 +90,7 @@ namespace Robust.Client.UserInterface.Controls
             {
                 _text = value;
                 _textMemory = value.AsMemory();
+                RefreshDisplayText(sourceChanged: true);
                 _textDimensionCacheValid = false;
                 InvalidateMeasure();
             }
@@ -74,6 +115,7 @@ namespace Robust.Client.UserInterface.Controls
             {
                 _text = null;
                 _textMemory = value;
+                RefreshDisplayText(sourceChanged: true);
                 _textDimensionCacheValid = false;
                 InvalidateMeasure();
             }
@@ -157,6 +199,7 @@ namespace Robust.Client.UserInterface.Controls
 
         protected internal override void Draw(DrawingHandleScreen handle)
         {
+            RefreshDisplayText();
             if (_textMemory.Length == 0)
             {
                 return;
@@ -215,7 +258,7 @@ namespace Robust.Client.UserInterface.Controls
 
             var baseLine = CalcBaseline();
 
-            foreach (var rune in _textMemory.Span.EnumerateRunes())
+            foreach (var rune in _displayTextMemory.Span.EnumerateRunes())
             {
                 if (rune == new Rune('\n'))
                 {
@@ -246,6 +289,7 @@ namespace Robust.Client.UserInterface.Controls
 
         protected override Vector2 MeasureOverride(Vector2 availableSize)
         {
+            RefreshDisplayText();
             if (!_textDimensionCacheValid)
             {
                 _calculateTextDimension();
@@ -287,7 +331,7 @@ namespace Robust.Client.UserInterface.Controls
 
             var font = ActualFont;
             var height = font.GetHeight(UIScale);
-            foreach (var rune in _textMemory.Span.EnumerateRunes())
+            foreach (var rune in _displayTextMemory.Span.EnumerateRunes())
             {
                 if (rune == new Rune('\n'))
                 {

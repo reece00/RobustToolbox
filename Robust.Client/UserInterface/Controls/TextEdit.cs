@@ -78,6 +78,8 @@ public sealed class TextEdit : Control
     // The intent is that the text is cut from the rope again if the composition gets cancelled or edited.
     private (CursorPos start, int length)? _imeData;
 
+    internal bool TranslationImeActive => _imeData.HasValue;
+
     // Yay fancy blink animation!!!!
     private TextEditShared.CursorBlink _blink;
 

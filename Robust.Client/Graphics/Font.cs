@@ -111,7 +111,17 @@ namespace Robust.Client.Graphics
 
         public override float DrawChar(DrawingHandleBase handle, Rune rune, Vector2 baseline, float scale, Color color, bool fallback=true)
         {
-            var metrics = Handle.GetCharMetrics(rune, scale);
+            var glyphHandle = Handle;
+            var metrics = glyphHandle.GetCharMetrics(rune, scale);
+            if (!metrics.HasValue && fallback && !Rune.IsWhiteSpace(rune))
+            {
+                var chinese = TranslationFontFallback.GetHandle(Size);
+                if (chinese?.GetCharMetrics(rune, scale) is { } chineseMetrics)
+                {
+                    glyphHandle = chinese;
+                    metrics = chineseMetrics;
+                }
+            }
             if (!metrics.HasValue)
             {
                 if (fallback && !Rune.IsWhiteSpace(rune))
@@ -125,7 +135,7 @@ namespace Robust.Client.Graphics
                     return 0;
             }
 
-            var texture = Handle.GetCharTexture(rune, scale);
+            var texture = glyphHandle.GetCharTexture(rune, scale);
             if (texture == null)
             {
                 return metrics.Value.Advance;
@@ -143,7 +153,8 @@ namespace Robust.Client.Graphics
         {
             var metrics = Handle.GetCharMetrics(rune, scale);
             if (metrics == null && !Rune.IsWhiteSpace(rune) && fallback)
-                return Handle.GetCharMetrics(new Rune('�'), scale);
+                return TranslationFontFallback.GetHandle(Size)?.GetCharMetrics(rune, scale)
+                       ?? Handle.GetCharMetrics(new Rune('�'), scale);
             return metrics;
         }
     }

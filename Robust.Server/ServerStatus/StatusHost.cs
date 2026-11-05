@@ -22,6 +22,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using HttpListener = SpaceWizards.HttpListener.HttpListener;
 using HttpListenerContext = SpaceWizards.HttpListener.HttpListenerContext;
+using HttpListenerException = SpaceWizards.HttpListener.HttpListenerException;
 
 // This entire file is NIHing a REST server because pulling in libraries is effort.
 // Also it was fun to write.
@@ -71,10 +72,27 @@ namespace Robust.Server.ServerStatus
                 // 404.
                 await apiContext.RespondAsync("Not Found", HttpStatusCode.NotFound);
             }
+            catch (HttpListenerException e)
+            {
+                _httpSawmill.Info(
+                    $"HTTP connection interrupted for {apiContext.RequestMethod} {apiContext.Url.PathAndQuery} " +
+                    $"from {apiContext.RemoteEndPoint}: {e.Message}");
+                context.Response.Abort();
+            }
             catch (Exception e)
             {
                 _httpSawmill.Error($"Exception in StatusHost: {e}");
-                await apiContext.RespondErrorAsync(HttpStatusCode.InternalServerError);
+                try
+                {
+                    await apiContext.RespondErrorAsync(HttpStatusCode.InternalServerError);
+                }
+                catch (HttpListenerException responseError)
+                {
+                    _httpSawmill.Info(
+                        $"HTTP connection interrupted for {apiContext.RequestMethod} {apiContext.Url.PathAndQuery} " +
+                        $"from {apiContext.RemoteEndPoint}: {responseError.Message}");
+                    context.Response.Abort();
+                }
             }
 
             /*
